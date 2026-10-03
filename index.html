@@ -47,6 +47,7 @@ h1{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-weight:800;font-s
 const SUPABASE_URL = "https://ahpibulygxdvdlzzvnpk.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFocGlidWx5Z3hkdmRsenp2bnBrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEwMTI0OTMsImV4cCI6MjEwNjU4ODQ5M30.Okt8xgW0gB4BK6XCWwo8t5FFBH_W9nk20ASxB3aVjOI";
 const TITLE = "Partidul Unirii Clasei";
+const ROLES = ["Presedinte", "Premier", "Vicepresedinte", "Securitate", "Cetatean"];
 const SUBTITLE = "Alege o variantă la fiecare întrebare, apoi apasă „Votează”.";
 
 document.getElementById("title").textContent = TITLE;
@@ -55,6 +56,7 @@ const sub = document.getElementById("sub");
 const H = { apikey: SUPABASE_KEY, Authorization: "Bearer " + SUPABASE_KEY, "Content-Type": "application/json" };
 const wrap = document.getElementById("ballots");
 let CODE = null;
+let DEBUG = false;
 try{ CODE = localStorage.getItem("cod_membru"); }catch(e){}
 const esc = t => String(t).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -78,7 +80,7 @@ async function rpc(fn, args){
 const key = id => "vot_" + CODE + "_" + id;
 function voted(id){ try{ return localStorage.getItem(key(id)); }catch(e){ return null; } }
 function markVoted(id, c){ try{ localStorage.setItem(key(id), c); }catch(e){} }
-function logout(){ try{ localStorage.removeItem("cod_membru"); }catch(e){} CODE = null; start(); }
+function logout(){ try{ localStorage.removeItem("cod_membru"); sessionStorage.removeItem("debug_role"); }catch(e){} CODE = null; start(); }
 
 function renderLogin(){
   sub.textContent = "Votul este doar pentru membri. Introdu codul primit de la organizator.";
@@ -90,7 +92,7 @@ function renderLogin(){
     try{
       const name = await rpc("member_name", { p_code: c });
       if(!name){ msg.textContent = "Cod invalid."; btn.disabled = false; return; }
-      CODE = c; try{ localStorage.setItem("cod_membru", c); }catch(e){}
+      CODE = c; try{ localStorage.setItem("cod_membru", c); sessionStorage.removeItem("debug_role"); }catch(e){}
       start();
     }catch(e){ msg.textContent = e.message; btn.disabled = false; }
   };
@@ -114,6 +116,7 @@ async function showResults(q, box, msg){
     box.querySelector("h2").textContent = q.question_text;
     requestAnimationFrame(() => box.querySelectorAll(".fill").forEach(f => f.style.width = f.dataset.w + "%"));
     const b = box.querySelector("#back"); if(b) b.onclick = () => renderVote(q, box);
+    if(DEBUG){ const n = document.createElement("p"); n.className = "total"; n.textContent = "Cont de test: votul tău nu se numără."; box.appendChild(n); }
   }catch(e){ if(msg) msg.textContent = e.message; }
 }
 
@@ -131,7 +134,7 @@ function renderVote(q, box){
   });
   go.onclick = async () => {
     go.disabled = true; msg.textContent = "";
-    try{ await rpc("cast_vote", { p_code: CODE, p_question: q.id, p_choice: pick }); markVoted(q.id, pick); showResults(q, box, msg); }
+    try{ await rpc("cast_vote", { p_code: CODE, p_question: q.id, p_choice: pick }); if(!DEBUG) markVoted(q.id, pick); showResults(q, box, msg); }
     catch(e){
       if(e.dup){ markVoted(q.id, "-"); showResults(q, box, msg); }
       else { msg.textContent = e.message; go.disabled = false; }
@@ -187,6 +190,20 @@ async function renderAdmin(questions){
   };
 }
 
+function renderRolePicker(name){
+  sub.textContent = "Cont de test (" + name + "): alege funcția cu care intri. Votul tău nu se numără.";
+  wrap.innerHTML = "";
+  const box = document.createElement("section"); box.className = "ballot";
+  const h = document.createElement("h2"); h.textContent = "Alege funcția"; box.appendChild(h);
+  ROLES.forEach(r => {
+    const b = document.createElement("button"); b.className = "opt"; b.textContent = r;
+    b.onclick = () => { try{ sessionStorage.setItem("debug_role", r); }catch(e){} start(); };
+    box.appendChild(b);
+  });
+  const out = document.createElement("button"); out.className = "link"; out.style.marginLeft = "0"; out.textContent = "Ieși"; out.onclick = logout; box.appendChild(out);
+  wrap.appendChild(box);
+}
+
 async function start(){
   wrap.innerHTML = "";
   if(!CODE){ renderLogin(); return; }
@@ -195,9 +212,21 @@ async function start(){
   if(!name){ logout(); return; }
   let role = null;
   try{ role = await rpc("member_role", { p_code: CODE }); }catch(e){}
+  DEBUG = false;
+  try{ DEBUG = await rpc("is_debug", { p_code: CODE }) === true; }catch(e){}
+  if(DEBUG){
+    let chosen = null; try{ chosen = sessionStorage.getItem("debug_role"); }catch(e){}
+    if(!chosen){ renderRolePicker(name); return; }
+    role = chosen;
+  }
   sub.textContent = "Bună, " + name + (role ? ", " + role : "") + ". " + SUBTITLE + " ";
   const out = document.createElement("button"); out.className = "link"; out.style.marginLeft = "0"; out.textContent = "Ieși"; out.onclick = logout;
   sub.appendChild(out);
+  if(DEBUG){
+    const ch = document.createElement("button"); ch.className = "link"; ch.textContent = "Schimbă funcția";
+    ch.onclick = () => { try{ sessionStorage.removeItem("debug_role"); }catch(e){} start(); };
+    sub.appendChild(ch);
+  }
 
   let questions = [];
   try{ questions = await rpc("list_questions", { p_code: CODE }); }catch(e){ sub.textContent = e.message; return; }
