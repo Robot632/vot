@@ -61,6 +61,10 @@ h1{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-weight:800;font-s
 .send{position:absolute;right:20px;bottom:20px;width:56px;height:56px;border-radius:50%;border:0;background:var(--ink);color:var(--paper);cursor:pointer;display:grid;place-items:center;box-shadow:0 4px 12px rgba(0,0,0,.25)}
 .send:disabled{opacity:.35;cursor:default}
 .poll .msg{padding-right:70px;margin-bottom:56px}
+.chip.pick{border:1.5px solid var(--line);cursor:pointer;font:inherit;font-size:.9rem;color:inherit;background:none;padding:4px 12px}
+.chip.pick[aria-pressed=true]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.chip.pick:focus-visible{outline:3px solid var(--stamp);outline-offset:2px}
+.only{color:var(--mute);font-size:.9rem;margin:-6px 0 12px}
 </style>
 </head>
 <body>
@@ -97,6 +101,7 @@ async function rpc(fn, args){
       m.includes("duplicate") ? "Ai votat deja la această întrebare." :
       m.includes("intrebare invalida") ? "Întrebare invalidă: scrie textul și cel puțin 2 variante." :
       m.includes("alegere invalida") ? "Variantă invalidă." :
+      m.includes("functie nepermisa") ? "Această întrebare nu e pentru funcția ta." :
       "Eroare (" + r.status + "). Încearcă din nou.");
     e.dup = m.includes("duplicate");
     throw e;
@@ -186,6 +191,7 @@ async function renderAdmin(questions){
     const votes = rows.filter(r => r.question_id === q.id);
     const card = document.createElement("div"); card.className = "qcard";
     const t = document.createElement("h3"); t.textContent = q.question_text; card.appendChild(t);
+    if(q.roles && q.roles.length){ const o = document.createElement("div"); o.className = "only"; o.textContent = "Doar pentru: " + q.roles.join(", "); card.appendChild(o); }
     q.options.forEach(o => {
       const who = votes.filter(v => v.choice === o).map(v => v.name);
       const line = document.createElement("div"); line.className = "ans";
@@ -225,6 +231,9 @@ async function renderAdmin(questions){
     <div id="opts"></div>
     <button type="button" class="addopt" id="addopt">+ Adaugă variantă</button>
     <p class="hint">Fiecare membru poate alege un singur răspuns.</p>
+    <span class="lbl mute">Cine poate vota</span>
+    <div class="chips" id="roles"></div>
+    <p class="hint">Nu alege nimic = pot vota toate funcțiile.</p>
     <p class="msg" role="alert"></p>
     <button class="send" id="qadd" aria-label="Publică întrebarea" title="Publică întrebarea"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg></button>
   </div>`;
@@ -245,6 +254,18 @@ async function renderAdmin(questions){
     return inp;
   }
   addOpt(); addOpt();
+  let roleList = [];
+  try{ roleList = (await rpc("role_options", { p_code: CODE })).map(x => x.role); }catch(e){}
+  const picked = new Set(), rbox = nq.querySelector("#roles");
+  if(roleList.length){
+    roleList.forEach(rl => {
+      const b = document.createElement("button"); b.type = "button"; b.className = "chip pick"; b.textContent = rl; b.setAttribute("aria-pressed", "false");
+      b.onclick = () => { picked.has(rl) ? picked.delete(rl) : picked.add(rl); b.setAttribute("aria-pressed", picked.has(rl)); };
+      rbox.appendChild(b);
+    });
+  } else {
+    rbox.innerHTML = '<input id="rtxt" placeholder="ex: Președinte, Secretar (separate prin virgulă)" aria-label="Funcții">';
+  }
   addBtn.onclick = () => addOpt().focus();
   nq.querySelector("#qadd").onclick = async () => {
     const text = nq.querySelector("#qt").value.trim();
@@ -252,7 +273,9 @@ async function renderAdmin(questions){
     msg.textContent = "";
     if(!text || options.length < 2){ msg.textContent = "Scrie întrebarea și cel puțin 2 variante."; return; }
     if(new Set(options.map(o => o.toLowerCase())).size !== options.length){ msg.textContent = "Variantele trebuie să fie diferite."; return; }
-    try{ await rpc("add_question", { p_code: CODE, p_text: text, p_options: options }); start(); }
+    const rt = nq.querySelector("#rtxt");
+    const roles = rt ? rt.value.split(",").map(x => x.trim()).filter(Boolean) : [...picked];
+    try{ await rpc("add_question", { p_code: CODE, p_text: text, p_options: options, p_roles: roles.length ? roles : null }); start(); }
     catch(e){ msg.textContent = e.message; }
   };
 }
@@ -299,7 +322,7 @@ async function start(){
   }
 
   let questions = [];
-  try{ questions = await rpc("list_questions", { p_code: CODE }); }catch(e){ sub.textContent = e.message; return; }
+  try{ questions = await rpc("list_questions", { p_code: CODE, p_role: DEBUG ? role : null }); }catch(e){ sub.textContent = e.message; return; }
   if(!questions.length){
     const p = document.createElement("p"); p.className = "sub"; p.textContent = "Nu sunt întrebări încă. Revino mai târziu."; wrap.appendChild(p);
   }
