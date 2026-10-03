@@ -51,7 +51,6 @@ h1{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-weight:800;font-s
 const SUPABASE_URL = "https://ahpibulygxdvdlzzvnpk.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFocGlidWx5Z3hkdmRsenp2bnBrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEwMTI0OTMsImV4cCI6MjEwNjU4ODQ5M30.Okt8xgW0gB4BK6XCWwo8t5FFBH_W9nk20ASxB3aVjOI";
 const TITLE = "Partidul Unirii Clasei";
-const ROLES = ["Presedinte", "Premier", "Vicepresedinte", "Securitate", "Cetatean"];
 const SUBTITLE = "Alege o variantă la fiecare întrebare, apoi apasă „Votează”.";
 
 document.getElementById("title").textContent = TITLE;
@@ -194,12 +193,15 @@ async function renderAdmin(questions){
   };
 }
 
-function renderRolePicker(name){
+async function renderRolePicker(name){
   sub.textContent = "Cont de test (" + name + "): alege funcția cu care intri. Votul tău nu se numără.";
   wrap.innerHTML = "";
+  let roles = [];
+  try{ roles = (await rpc("role_options", { p_code: CODE })).map(x => x.role); }catch(e){ sub.textContent = e.message; return; }
   const box = document.createElement("section"); box.className = "ballot";
   const h = document.createElement("h2"); h.textContent = "Alege funcția"; box.appendChild(h);
-  ROLES.forEach(r => {
+  if(!roles.length){ const p = document.createElement("p"); p.className = "total"; p.textContent = "Nicio funcție în baza de date."; box.appendChild(p); }
+  roles.forEach(r => {
     const b = document.createElement("button"); b.className = "opt"; b.textContent = r;
     b.onclick = () => { try{ sessionStorage.setItem("debug_role", r); }catch(e){} start(); };
     box.appendChild(b);
@@ -220,7 +222,7 @@ async function start(){
   try{ DEBUG = await rpc("is_debug", { p_code: CODE }) === true; }catch(e){}
   if(DEBUG){
     let chosen = null; try{ chosen = sessionStorage.getItem("debug_role"); }catch(e){}
-    if(!chosen){ renderRolePicker(name); return; }
+    if(!chosen){ await renderRolePicker(name); return; }
     role = chosen;
   }
   sub.textContent = "Bună, " + name + (role ? ", " + role : "") + ". " + SUBTITLE + " ";
