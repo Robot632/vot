@@ -37,6 +37,30 @@ h1{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-weight:800;font-s
 .total{color:var(--mute);margin:14px 0 0}
 .login input,.login textarea{font:inherit;width:100%;padding:12px 14px;border:1.5px solid var(--ink);border-radius:3px;background:var(--paper);color:var(--ink);margin-bottom:10px;letter-spacing:.02em}
 .login textarea{resize:vertical}
+.admin,.poll{padding:0;overflow:hidden}
+.admin-head{background:var(--ink);color:var(--paper);padding:16px 22px;font:800 1.1rem "Bricolage Grotesque",system-ui,sans-serif}
+.admin-body{padding:22px;position:relative}
+.qcard{border:1.5px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px}
+.qcard h3{font:800 1.05rem "Bricolage Grotesque",system-ui,sans-serif;margin:0 0 12px}
+.ans{margin-bottom:10px}
+.ans-top{display:flex;justify-content:space-between;gap:12px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.chip{background:color-mix(in srgb,var(--ink) 8%,transparent);border-radius:999px;padding:2px 10px;font-size:.85rem}
+.chip.miss{background:none;border:1px dashed var(--line);color:var(--mute)}
+.lbl{display:block;font:800 .85rem "Bricolage Grotesque",system-ui,sans-serif;color:var(--stamp);margin:0 0 4px}
+.lbl.mute{color:var(--mute);margin-top:26px}
+.poll input{font:inherit;width:100%;background:transparent;color:var(--ink);border:0;border-bottom:2px solid var(--line);border-radius:0;padding:10px 2px;margin:0}
+.poll input:focus{outline:0;border-bottom-color:var(--stamp)}
+.poll input.main{font-size:1.15rem;border-bottom-color:var(--ink)}
+.optrow{display:flex;align-items:center;gap:8px;margin:6px 0 6px 18px}
+.optrow .x{background:none;border:0;color:var(--mute);font-size:1.3rem;cursor:pointer;line-height:1}
+.addopt{background:none;border:0;color:var(--mute);font:inherit;cursor:pointer;margin:6px 0 0 18px;padding:8px 2px}
+.addopt:hover{color:var(--ink)}
+.addopt:disabled{opacity:.35;cursor:default}
+.hint{color:var(--mute);font-size:.9rem;margin:14px 0 0;padding-right:70px}
+.send{position:absolute;right:20px;bottom:20px;width:56px;height:56px;border-radius:50%;border:0;background:var(--ink);color:var(--paper);cursor:pointer;display:grid;place-items:center;box-shadow:0 4px 12px rgba(0,0,0,.25)}
+.send:disabled{opacity:.35;cursor:default}
+.poll .msg{padding-right:70px;margin-bottom:56px}
 </style>
 </head>
 <body>
@@ -150,44 +174,84 @@ async function renderAdmin(questions){
   const rows = await rpc("admin_votes", { p_code: CODE });
   const names = [...new Set(rows.map(r => r.name))];
 
-  const box = document.createElement("section");
-  box.className = "ballot";
-  const h = document.createElement("h2"); h.textContent = "Panou organizator: cine a votat ce"; box.appendChild(h);
+  const panel = document.createElement("section");
+  panel.className = "ballot admin";
+  panel.innerHTML = '<div class="admin-head">Panou organizator</div><div class="admin-body"></div>';
+  const body = panel.querySelector(".admin-body");
   if(!questions.length){
-    const p = document.createElement("p"); p.className = "total"; p.textContent = "Nu ai creat nicio întrebare încă. Scrie prima mai jos."; box.appendChild(p);
+    const p = document.createElement("p"); p.className = "total"; p.style.margin = "0 0 16px";
+    p.textContent = "Nu ai creat nicio întrebare încă. Scrie prima mai jos."; body.appendChild(p);
   }
   questions.forEach(q => {
     const votes = rows.filter(r => r.question_id === q.id);
-    const p = document.createElement("div"); p.className = "row"; p.style.marginBottom = "18px";
-    const t = document.createElement("strong"); t.textContent = q.question_text; p.appendChild(t);
+    const card = document.createElement("div"); card.className = "qcard";
+    const t = document.createElement("h3"); t.textContent = q.question_text; card.appendChild(t);
     q.options.forEach(o => {
       const who = votes.filter(v => v.choice === o).map(v => v.name);
-      const d = document.createElement("div"); d.textContent = o + " (" + who.length + "): " + (who.join(", ") || "-"); p.appendChild(d);
+      const line = document.createElement("div"); line.className = "ans";
+      const top = document.createElement("div"); top.className = "ans-top";
+      const a = document.createElement("span"); a.textContent = o;
+      const n = document.createElement("b"); n.textContent = who.length;
+      top.append(a, n); line.appendChild(top);
+      const chips = document.createElement("div"); chips.className = "chips";
+      if(who.length) who.forEach(w => { const c = document.createElement("span"); c.className = "chip"; c.textContent = w; chips.appendChild(c); });
+      else { const c = document.createElement("span"); c.style.color = "var(--mute)"; c.textContent = "–"; chips.appendChild(c); }
+      line.appendChild(chips); card.appendChild(line);
     });
     const missing = names.filter(n => !votes.some(v => v.name === n));
-    const m = document.createElement("div"); m.style.color = "var(--mute)";
-    m.textContent = "Nu au votat încă (" + missing.length + "): " + (missing.join(", ") || "-"); p.appendChild(m);
-    const del = document.createElement("button"); del.className = "link"; del.style.marginLeft = "0"; del.textContent = "Șterge întrebarea";
+    const mh = document.createElement("div"); mh.className = "total"; mh.style.margin = "12px 0 0";
+    mh.textContent = "Nu au votat încă (" + missing.length + ")"; card.appendChild(mh);
+    const mc = document.createElement("div"); mc.className = "chips";
+    missing.forEach(w => { const c = document.createElement("span"); c.className = "chip miss"; c.textContent = w; mc.appendChild(c); });
+    card.appendChild(mc);
+    const del = document.createElement("button"); del.className = "link"; del.style.marginLeft = "0"; del.style.marginTop = "10px";
+    del.textContent = "Șterge întrebarea";
     del.onclick = async () => {
       if(!confirm("Ștergi întrebarea și toate voturile ei?")) return;
       try{ await rpc("delete_question", { p_code: CODE, p_id: q.id }); start(); }catch(e){ alert(e.message); }
     };
-    p.appendChild(del);
-    box.appendChild(p);
+    card.appendChild(del);
+    body.appendChild(card);
   });
-  const r = document.createElement("button"); r.className = "go"; r.textContent = "Actualizează"; r.onclick = start; box.appendChild(r);
-  wrap.appendChild(box);
+  const r = document.createElement("button"); r.className = "go"; r.textContent = "Actualizează"; r.onclick = start; body.appendChild(r);
+  wrap.appendChild(panel);
 
   const nq = document.createElement("section");
-  nq.className = "ballot login";
-  nq.innerHTML = `<h2>Întrebare nouă</h2><input id="qt" placeholder="Textul întrebării" aria-label="Textul întrebării"><textarea id="qo" rows="4" placeholder="Câte o variantă pe fiecare rând (minim 2)" aria-label="Variantele de răspuns"></textarea><button class="go" id="qadd">Publică întrebarea</button><p class="msg" role="alert"></p>`;
+  nq.className = "ballot poll";
+  nq.innerHTML = `<div class="admin-head">Întrebare nouă</div><div class="admin-body">
+    <label class="lbl" for="qt">Întrebare</label>
+    <input id="qt" class="main" placeholder="Pune întrebarea" autocomplete="off">
+    <span class="lbl mute">Variante</span>
+    <div id="opts"></div>
+    <button type="button" class="addopt" id="addopt">+ Adaugă variantă</button>
+    <p class="hint">Fiecare membru poate alege un singur răspuns.</p>
+    <p class="msg" role="alert"></p>
+    <button class="send" id="qadd" aria-label="Publică întrebarea" title="Publică întrebarea"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg></button>
+  </div>`;
   wrap.appendChild(nq);
-  const msg = nq.querySelector(".msg");
+  const optsBox = nq.querySelector("#opts"), addBtn = nq.querySelector("#addopt"), msg = nq.querySelector(".msg");
+  const MAX = 8;
+  function sync(){
+    const rowsEl = optsBox.querySelectorAll(".optrow");
+    rowsEl.forEach(x => x.querySelector(".x").style.visibility = rowsEl.length > 2 ? "visible" : "hidden");
+    addBtn.disabled = rowsEl.length >= MAX;
+  }
+  function addOpt(){
+    const row = document.createElement("div"); row.className = "optrow";
+    const inp = document.createElement("input"); inp.placeholder = "+ Adaugă"; inp.setAttribute("aria-label", "Variantă de răspuns"); inp.autocomplete = "off";
+    const x = document.createElement("button"); x.type = "button"; x.className = "x"; x.textContent = "×"; x.setAttribute("aria-label", "Șterge varianta");
+    x.onclick = () => { row.remove(); sync(); };
+    row.append(inp, x); optsBox.appendChild(row); sync();
+    return inp;
+  }
+  addOpt(); addOpt();
+  addBtn.onclick = () => addOpt().focus();
   nq.querySelector("#qadd").onclick = async () => {
     const text = nq.querySelector("#qt").value.trim();
-    const options = nq.querySelector("#qo").value.split("\n").map(x => x.trim()).filter(Boolean);
+    const options = [...optsBox.querySelectorAll("input")].map(i => i.value.trim()).filter(Boolean);
     msg.textContent = "";
-    if(!text || options.length < 2){ msg.textContent = "Scrie textul întrebării și cel puțin 2 variante, câte una pe rând."; return; }
+    if(!text || options.length < 2){ msg.textContent = "Scrie întrebarea și cel puțin 2 variante."; return; }
+    if(new Set(options.map(o => o.toLowerCase())).size !== options.length){ msg.textContent = "Variantele trebuie să fie diferite."; return; }
     try{ await rpc("add_question", { p_code: CODE, p_text: text, p_options: options }); start(); }
     catch(e){ msg.textContent = e.message; }
   };
