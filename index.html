@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Votul partidului</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;800&family=Source+Serif+4:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#e9eef2;--paper:#fff;--ink:#14202b;--mute:#5c6b78;--stamp:#b3202a;--line:#c9d3db;--bar:#14202b}
+@media (prefers-color-scheme:dark){:root{--bg:#10171d;--paper:#18222b;--ink:#eef2f5;--mute:#91a1ae;--stamp:#ff6b73;--line:#2c3a46;--bar:#eef2f5}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Source Serif 4",Georgia,serif;line-height:1.55;padding:24px 16px 60px}
+main{max-width:620px;margin:0 auto}
+h1{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-weight:800;font-size:clamp(2rem,8vw,3.2rem);line-height:1.02;margin:12px 0 6px;letter-spacing:-.02em}
+.sub{color:var(--mute);margin:0 0 28px}
+.ballot{background:var(--paper);border:2px solid var(--ink);border-radius:4px;padding:22px;margin-bottom:22px;position:relative}
+.ballot h2{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-weight:500;font-size:1.25rem;margin:0 0 16px}
+.opt{display:flex;align-items:center;gap:12px;width:100%;text-align:left;font:inherit;color:inherit;background:none;border:1.5px solid var(--line);border-radius:3px;padding:12px 14px;margin-bottom:10px;cursor:pointer}
+.opt:hover{border-color:var(--ink)}
+.opt:focus-visible{outline:3px solid var(--stamp);outline-offset:2px}
+.box{width:22px;height:22px;border:2px solid var(--ink);flex:none;position:relative}
+.opt[aria-pressed=true]{border-color:var(--ink);background:color-mix(in srgb,var(--ink) 6%,transparent)}
+.opt[aria-pressed=true] .box::after{content:"X";position:absolute;inset:-4px 0 0 3px;font:800 22px "Bricolage Grotesque",sans-serif;color:var(--stamp)}
+.go{font:600 1rem "Bricolage Grotesque",system-ui,sans-serif;background:var(--ink);color:var(--paper);border:0;border-radius:3px;padding:12px 20px;cursor:pointer;margin-top:6px}
+.go:disabled{opacity:.35;cursor:default}
+.link{background:none;border:0;color:var(--mute);font:inherit;text-decoration:underline;cursor:pointer;margin-left:12px}
+.row{margin:0 0 12px}
+.row .top{display:flex;justify-content:space-between;gap:12px}
+.track{height:12px;background:var(--line);margin-top:4px}
+.fill{height:100%;background:var(--bar);width:0;transition:width .5s}
+.msg{color:var(--stamp);margin:10px 0 0;min-height:1.4em}
+.done{position:absolute;top:16px;right:16px;border:2px solid var(--stamp);color:var(--stamp);font:800 .8rem "Bricolage Grotesque",sans-serif;padding:2px 8px;transform:rotate(6deg);border-radius:3px}
+.total{color:var(--mute);margin:14px 0 0}
+.login input,.login textarea{font:inherit;width:100%;padding:12px 14px;border:1.5px solid var(--ink);border-radius:3px;background:var(--paper);color:var(--ink);margin-bottom:10px;letter-spacing:.02em}
+.login textarea{resize:vertical}
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title"></h1>
+  <p class="sub" id="sub"></p>
+  <div id="ballots"></div>
+</main>
+
+<script>
+const SUPABASE_URL = "https://ahpibulygxdvdlzzvnpk.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFocGlidWx5Z3hkdmRsenp2bnBrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEwMTI0OTMsImV4cCI6MjEwNjU4ODQ5M30.Okt8xgW0gB4BK6XCWwo8t5FFBH_W9nk20ASxB3aVjOI";
+const TITLE = "Partidul Unirii Clasei";
+const SUBTITLE = "Alege o variantă la fiecare întrebare, apoi apasă „Votează”.";
+
+document.getElementById("title").textContent = TITLE;
+document.title = TITLE;
+const sub = document.getElementById("sub");
+const H = { apikey: SUPABASE_KEY, Authorization: "Bearer " + SUPABASE_KEY, "Content-Type": "application/json" };
+const wrap = document.getElementById("ballots");
+let CODE = null;
+try{ CODE = localStorage.getItem("cod_membru"); }catch(e){}
+const esc = t => String(t).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+async function rpc(fn, args){
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, { method: "POST", headers: H, body: JSON.stringify(args) });
+  const body = await r.json().catch(() => null);
+  if(!r.ok){
+    const m = (body && body.message) || "";
+    const e = new Error(
+      m.includes("cod invalid") ? "Cod invalid." :
+      m.includes("duplicate") ? "Ai votat deja la această întrebare." :
+      m.includes("intrebare invalida") ? "Întrebare invalidă: scrie textul și cel puțin 2 variante." :
+      m.includes("alegere invalida") ? "Variantă invalidă." :
+      "Eroare (" + r.status + "). Încearcă din nou.");
+    e.dup = m.includes("duplicate");
+    throw e;
+  }
+  return body;
+}
+
+const key = id => "vot_" + CODE + "_" + id;
+function voted(id){ try{ return localStorage.getItem(key(id)); }catch(e){ return null; } }
+function markVoted(id, c){ try{ localStorage.setItem(key(id), c); }catch(e){} }
+function logout(){ try{ localStorage.removeItem("cod_membru"); }catch(e){} CODE = null; start(); }
+
+function renderLogin(){
+  sub.textContent = "Votul este doar pentru membri. Introdu codul primit de la organizator.";
+  wrap.innerHTML = `<section class="ballot login"><h2>Codul tău de membru</h2><input id="cod" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Cod de membru"><button class="go" id="intra">Intră</button><p class="msg" role="alert"></p></section>`;
+  const inp = wrap.querySelector("#cod"), msg = wrap.querySelector(".msg"), btn = wrap.querySelector("#intra");
+  const submit = async () => {
+    const c = inp.value.trim(); if(!c) return;
+    btn.disabled = true; msg.textContent = "";
+    try{
+      const name = await rpc("member_name", { p_code: c });
+      if(!name){ msg.textContent = "Cod invalid."; btn.disabled = false; return; }
+      CODE = c; try{ localStorage.setItem("cod_membru", c); }catch(e){}
+      start();
+    }catch(e){ msg.textContent = e.message; btn.disabled = false; }
+  };
+  btn.onclick = submit;
+  inp.onkeydown = e => { if(e.key === "Enter") submit(); };
+  inp.focus();
+}
+
+async function showResults(q, box, msg){
+  try{
+    const rows = await rpc("get_results", { p_code: CODE, p_question: q.id });
+    const counts = {}; rows.forEach(r => counts[r.choice] = Number(r.n));
+    const total = q.options.reduce((s, o) => s + (counts[o] || 0), 0);
+    const mine = voted(q.id);
+    box.innerHTML = (mine ? '<span class="done">VOTAT</span>' : '') + '<h2></h2>' +
+      q.options.map(o => {
+        const n = counts[o] || 0, p = total ? Math.round(n * 100 / total) : 0;
+        return `<div class="row"><div class="top"><span>${esc(o)}${mine === o ? " (votul tău)" : ""}</span><span>${n} · ${p}%</span></div><div class="track"><div class="fill" data-w="${p}"></div></div></div>`;
+      }).join("") + `<p class="total">${total} ${total === 1 ? "vot" : "voturi"}</p>` +
+      (mine ? "" : '<button class="link" id="back">Înapoi la vot</button>');
+    box.querySelector("h2").textContent = q.question_text;
+    requestAnimationFrame(() => box.querySelectorAll(".fill").forEach(f => f.style.width = f.dataset.w + "%"));
+    const b = box.querySelector("#back"); if(b) b.onclick = () => renderVote(q, box);
+  }catch(e){ if(msg) msg.textContent = e.message; }
+}
+
+function renderVote(q, box){
+  let pick = null;
+  box.innerHTML = '<h2></h2>' +
+    q.options.map((o, i) => `<button class="opt" data-i="${i}" aria-pressed="false"><span class="box"></span>${esc(o)}</button>`).join("") +
+    `<button class="go" disabled>Votează</button><button class="link" id="see">Vezi rezultatele</button><p class="msg" role="alert"></p>`;
+  box.querySelector("h2").textContent = q.question_text;
+  const go = box.querySelector(".go"), msg = box.querySelector(".msg");
+  box.querySelectorAll(".opt").forEach(b => b.onclick = () => {
+    pick = q.options[+b.dataset.i];
+    box.querySelectorAll(".opt").forEach(x => x.setAttribute("aria-pressed", x === b));
+    go.disabled = false;
+  });
+  go.onclick = async () => {
+    go.disabled = true; msg.textContent = "";
+    try{ await rpc("cast_vote", { p_code: CODE, p_question: q.id, p_choice: pick }); markVoted(q.id, pick); showResults(q, box, msg); }
+    catch(e){
+      if(e.dup){ markVoted(q.id, "-"); showResults(q, box, msg); }
+      else { msg.textContent = e.message; go.disabled = false; }
+    }
+  };
+  box.querySelector("#see").onclick = () => showResults(q, box, msg);
+}
+
+async function renderAdmin(questions){
+  const rows = await rpc("admin_votes", { p_code: CODE });
+  const names = [...new Set(rows.map(r => r.name))];
+
+  const box = document.createElement("section");
+  box.className = "ballot";
+  const h = document.createElement("h2"); h.textContent = "Panou organizator: cine a votat ce"; box.appendChild(h);
+  if(!questions.length){
+    const p = document.createElement("p"); p.className = "total"; p.textContent = "Nu ai creat nicio întrebare încă. Scrie prima mai jos."; box.appendChild(p);
+  }
+  questions.forEach(q => {
+    const votes = rows.filter(r => r.question_id === q.id);
+    const p = document.createElement("div"); p.className = "row"; p.style.marginBottom = "18px";
+    const t = document.createElement("strong"); t.textContent = q.question_text; p.appendChild(t);
+    q.options.forEach(o => {
+      const who = votes.filter(v => v.choice === o).map(v => v.name);
+      const d = document.createElement("div"); d.textContent = o + " (" + who.length + "): " + (who.join(", ") || "-"); p.appendChild(d);
+    });
+    const missing = names.filter(n => !votes.some(v => v.name === n));
+    const m = document.createElement("div"); m.style.color = "var(--mute)";
+    m.textContent = "Nu au votat încă (" + missing.length + "): " + (missing.join(", ") || "-"); p.appendChild(m);
+    const del = document.createElement("button"); del.className = "link"; del.style.marginLeft = "0"; del.textContent = "Șterge întrebarea";
+    del.onclick = async () => {
+      if(!confirm("Ștergi întrebarea și toate voturile ei?")) return;
+      try{ await rpc("delete_question", { p_code: CODE, p_id: q.id }); start(); }catch(e){ alert(e.message); }
+    };
+    p.appendChild(del);
+    box.appendChild(p);
+  });
+  const r = document.createElement("button"); r.className = "go"; r.textContent = "Actualizează"; r.onclick = start; box.appendChild(r);
+  wrap.appendChild(box);
+
+  const nq = document.createElement("section");
+  nq.className = "ballot login";
+  nq.innerHTML = `<h2>Întrebare nouă</h2><input id="qt" placeholder="Textul întrebării" aria-label="Textul întrebării"><textarea id="qo" rows="4" placeholder="Câte o variantă pe fiecare rând (minim 2)" aria-label="Variantele de răspuns"></textarea><button class="go" id="qadd">Publică întrebarea</button><p class="msg" role="alert"></p>`;
+  wrap.appendChild(nq);
+  const msg = nq.querySelector(".msg");
+  nq.querySelector("#qadd").onclick = async () => {
+    const text = nq.querySelector("#qt").value.trim();
+    const options = nq.querySelector("#qo").value.split("\n").map(x => x.trim()).filter(Boolean);
+    msg.textContent = "";
+    if(!text || options.length < 2){ msg.textContent = "Scrie textul întrebării și cel puțin 2 variante, câte una pe rând."; return; }
+    try{ await rpc("add_question", { p_code: CODE, p_text: text, p_options: options }); start(); }
+    catch(e){ msg.textContent = e.message; }
+  };
+}
+
+async function start(){
+  wrap.innerHTML = "";
+  if(!CODE){ renderLogin(); return; }
+  let name;
+  try{ name = await rpc("member_name", { p_code: CODE }); }catch(e){ sub.textContent = e.message; return; }
+  if(!name){ logout(); return; }
+  let role = null;
+  try{ role = await rpc("member_role", { p_code: CODE }); }catch(e){}
+  sub.textContent = "Bună, " + name + (role ? ", " + role : "") + ". " + SUBTITLE + " ";
+  const out = document.createElement("button"); out.className = "link"; out.style.marginLeft = "0"; out.textContent = "Ieși"; out.onclick = logout;
+  sub.appendChild(out);
+
+  let questions = [];
+  try{ questions = await rpc("list_questions", { p_code: CODE }); }catch(e){ sub.textContent = e.message; return; }
+  if(!questions.length){
+    const p = document.createElement("p"); p.className = "sub"; p.textContent = "Nu sunt întrebări încă. Revino mai târziu."; wrap.appendChild(p);
+  }
+  questions.forEach(q => {
+    const box = document.createElement("section");
+    box.className = "ballot";
+    wrap.appendChild(box);
+    voted(q.id) ? showResults(q, box) : renderVote(q, box);
+  });
+  try{ if(await rpc("is_admin", { p_code: CODE })) await renderAdmin(questions); }catch(e){}
+}
+start();
+</script>
+</body>
+</html>
