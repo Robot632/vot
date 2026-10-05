@@ -311,6 +311,28 @@ async function renderAdmin(questions){
       (q.roles && q.roles.length ? "\nDoar pentru: " + q.roles.join(", ") : "") +
       "\nVotează aici: " + location.href.split("#")[0], b));
     mk("Duplică", () => prefillForm(q));
+    mk("Prelungește termenul", () => {
+      const old = card.querySelector(".ext"); if(old){ old.remove(); return; }
+      const toLocal = d => { const x = new Date(d); x.setMinutes(x.getMinutes() - x.getTimezoneOffset()); return x.toISOString().slice(0, 16); };
+      const eb = document.createElement("div"); eb.className = "editbox ext";
+      const lb = document.createElement("div"); lb.className = "total"; lb.style.margin = "0 0 6px";
+      lb.textContent = isClosed(q) ? "Votul e închis. Alege până când îl redeschizi:" : "Se închide la:"; eb.appendChild(lb);
+      const di = document.createElement("input"); di.type = "datetime-local"; di.setAttribute("aria-label", "Noul termen limită");
+      di.value = toLocal(q.closes_at && new Date(q.closes_at) > new Date() ? q.closes_at : Date.now() + 24 * 3600 * 1000); eb.appendChild(di);
+      const em = document.createElement("p"); em.className = "msg"; em.setAttribute("role", "alert"); eb.appendChild(em);
+      const send = async iso => { try{ await rpc("set_question_deadline", { p_code: CODE, p_id: q.id, p_closes_at: iso }); start(); }catch(e){ em.textContent = e.message; } };
+      const sv = document.createElement("button"); sv.className = "go"; sv.textContent = "Salvează termenul";
+      sv.onclick = () => {
+        if(!di.value){ em.textContent = "Alege data și ora."; return; }
+        const d = new Date(di.value);
+        if(d <= new Date()){ em.textContent = "Termenul trebuie să fie în viitor."; return; }
+        send(d.toISOString());
+      };
+      eb.appendChild(sv);
+      const nt = document.createElement("button"); nt.className = "link"; nt.textContent = "Fără termen limită"; nt.onclick = () => send(null); eb.appendChild(nt);
+      const cn = document.createElement("button"); cn.className = "link"; cn.textContent = "Anulează"; cn.onclick = () => eb.remove(); eb.appendChild(cn);
+      card.insertBefore(eb, card.querySelector(".ans"));
+    });
     mk("Editează", () => {
       const old = card.querySelector(".editbox"); if(old){ old.remove(); return; }
       const eb = document.createElement("div"); eb.className = "editbox";
