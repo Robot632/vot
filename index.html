@@ -70,7 +70,8 @@ h1{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-weight:800;font-s
 .chk{display:flex;align-items:center;gap:10px;margin:16px 0 0;cursor:pointer}
 .mrow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
 .code{font-family:ui-monospace,Menlo,monospace;font-size:.82rem;color:var(--mute);word-break:break-all}
-.poll #mn,.poll #mr{margin-bottom:10px}
+.poll #mn,.poll #mr,.poll #mrnew{margin-bottom:10px}
+.poll #mr{width:100%}
 .poll select{font:inherit;max-width:100%;padding:8px 2px;background:transparent;color:var(--ink);border:0;border-bottom:2px solid var(--line);border-radius:0}
 .editbox{border:1.5px dashed var(--line);border-radius:8px;padding:12px;margin:10px 0}
 .editbox input{font:inherit;width:100%;background:transparent;color:var(--ink);border:0;border-bottom:2px solid var(--line);border-radius:0;padding:8px 2px;margin:0 0 8px}
@@ -481,16 +482,20 @@ async function renderAdmin(questions){
   mp.innerHTML = `<div class="admin-head">Membri</div><div class="admin-body">
     <label class="lbl" for="mn">Membru nou</label>
     <input id="mn" placeholder="Nume" autocomplete="off">
-    <input id="mr" list="rolelist" placeholder="Funcție" autocomplete="off" aria-label="Funcție">
-    <datalist id="rolelist"></datalist>
+    <select id="mr" aria-label="Funcție"></select>
+    <input id="mrnew" placeholder="Numele funcției noi" autocomplete="off" aria-label="Funcție nouă" hidden>
     <button class="go" id="madd">Adaugă membru</button>
     <p class="msg" role="alert"></p>
     <div id="newcode"></div>
     <span class="lbl mute">Toți membrii (${voters.length})</span>
     <div id="mlist"></div></div>`;
   wrap.appendChild(mp);
-  const dl = mp.querySelector("#rolelist");
-  [...new Set(members.map(m => m.role).filter(Boolean))].forEach(x => { const o = document.createElement("option"); o.value = x; dl.appendChild(o); });
+  const sel = mp.querySelector("#mr"), rnew = mp.querySelector("#mrnew");
+  const addOption = (v, t) => { const o = document.createElement("option"); o.value = v; o.textContent = t; sel.appendChild(o); };
+  addOption("", "Alege funcția");
+  [...new Set(members.filter(m => !m.is_debug).map(m => m.role).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ro")).forEach(x => addOption(x, x));
+  addOption("__new", "+ Altă funcție…");
+  sel.onchange = () => { rnew.hidden = sel.value !== "__new"; if(!rnew.hidden) rnew.focus(); };
   const mlist = mp.querySelector("#mlist");
   members.forEach(m => {
     const row = document.createElement("div"); row.className = "mrow";
@@ -524,13 +529,13 @@ async function renderAdmin(questions){
     nc.scrollIntoView({ block: "nearest" });
   }
   mp.querySelector("#madd").onclick = async () => {
-    const nm = mp.querySelector("#mn").value.trim(), rl = mp.querySelector("#mr").value.trim();
+    const nm = mp.querySelector("#mn").value.trim(), rl = sel.value === "__new" ? rnew.value.trim() : sel.value;
     mmsg.textContent = ""; nc.textContent = "";
     if(!nm){ mmsg.textContent = "Scrie numele membrului."; return; }
     try{
       const code = await rpc("add_member", { p_code: CODE, p_name: nm, p_role: rl || null });
       showCode(nm, code);
-      mp.querySelector("#mn").value = ""; mp.querySelector("#mr").value = "";
+      mp.querySelector("#mn").value = ""; sel.value = ""; rnew.value = ""; rnew.hidden = true;
     }catch(e){ mmsg.textContent = e.message; }
   };
 }
