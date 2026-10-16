@@ -81,6 +81,10 @@ h1{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-weight:800;font-s
 .arch summary{cursor:pointer;padding:14px 0;font:800 .95rem "Bricolage Grotesque",system-ui,sans-serif;color:var(--mute)}
 .arch[open] summary{color:var(--ink)}
 .arch .qcard{background:var(--paper)}
+.endbar{margin:-12px 0 22px;text-align:right}
+.endbtn{font:800 .9rem "Bricolage Grotesque",system-ui,sans-serif;background:none;color:var(--stamp);border:2px solid var(--stamp);border-radius:3px;padding:8px 16px;cursor:pointer}
+.endbtn:hover{background:var(--stamp);color:var(--paper)}
+.endbtn:disabled{opacity:.35;cursor:default}
 </style>
 </head>
 <body>
@@ -295,7 +299,7 @@ async function renderAdmin(questions, archived = []){
     st.textContent = (isClosed(q) ? "Închis" : q.closes_at ? "Deschis până pe " + fmt(q.closes_at) : "Deschis") + (q.secret ? ". Rezultatele sunt vizibile doar pentru tine" : "") + (q.hide_results ? ". Rezultatele sunt ascunse până la închidere." : ".") + (OUTCOME[q.id] ? " Rezultat: " + OUTCOME[q.id] + "." : "");
     card.insertBefore(st, card.querySelector(".ans"));
     const cl = document.createElement("button"); cl.className = "link"; cl.style.marginLeft = "0"; cl.style.marginTop = "10px"; cl.style.marginRight = "14px";
-    cl.textContent = isClosed(q) ? "Redeschide votul" : "Închide votul";
+    cl.textContent = isClosed(q) ? "Redeschide votul" : "Încheie votul";
     cl.onclick = async () => {
       try{ await rpc("set_question_closed", { p_code: CODE, p_id: q.id, p_closed: !isClosed(q) }); start(); }catch(e){ alert(e.message); }
     };
@@ -613,6 +617,17 @@ async function start(){
     box.className = "ballot";
     wrap.appendChild(box);
     (voted(q.id) || isClosed(q)) ? showResults(q, box) : renderVote(q, box);
+    if(ADMIN){
+      const bar = document.createElement("div"); bar.className = "endbar";
+      const eb = document.createElement("button"); eb.className = "endbtn"; eb.textContent = "Încheie votul";
+      eb.onclick = async () => {
+        if(!confirm("Închei votul? Va dispărea pentru toți membrii, iar tu îl vei vedea în arhivă.")) return;
+        eb.disabled = true;
+        try{ await rpc("set_question_closed", { p_code: CODE, p_id: q.id, p_closed: true }); start(); }
+        catch(e){ eb.disabled = false; alert(e.message); }
+      };
+      bar.appendChild(eb); wrap.appendChild(bar);
+    }
   });
   try{
     const h = (await rpc("recruitment_history", { p_code: CODE })).filter(x => !rejected(x.outcome));
