@@ -77,6 +77,10 @@ h1{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-weight:800;font-s
 .editbox input{font:inherit;width:100%;background:transparent;color:var(--ink);border:0;border-bottom:2px solid var(--line);border-radius:0;padding:8px 2px;margin:0 0 8px}
 .editbox input:focus{outline:0;border-bottom-color:var(--stamp)}
 .poll .chk input[type=checkbox]{width:20px;height:20px;padding:0;margin:0;border:0;accent-color:var(--ink)}
+.arch{margin-top:22px;border:1.5px dashed var(--line);border-radius:8px;padding:0 14px}
+.arch summary{cursor:pointer;padding:14px 0;font:800 .95rem "Bricolage Grotesque",system-ui,sans-serif;color:var(--mute)}
+.arch[open] summary{color:var(--ink)}
+.arch .qcard{background:var(--paper)}
 </style>
 </head>
 <body>
@@ -133,6 +137,8 @@ function logout(){ try{ localStorage.removeItem("cod_membru"); sessionStorage.re
 
 let ADMIN = false;
 let OUTCOME = {};
+// recrutări respinse / fără cvorum: nu apar în istoric
+const rejected = o => /respins|neadoptat|cvorum|nu a trecut|egalitate/i.test(String(o || "").normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
 const fmtD = d => new Date(d).toLocaleDateString("ro-RO", { day: "numeric", month: "short" });
 const fmt = d => new Date(d).toLocaleString("ro-RO", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 const isClosed = q => q.closed === true || (!!q.closes_at && new Date(q.closes_at) <= new Date());
@@ -235,7 +241,7 @@ function renderVote(q, box){
   const see = box.querySelector("#see"); if(hiddenRes(q)) see.remove(); else see.onclick = () => showResults(q, box, msg);
 }
 
-async function renderAdmin(questions){
+async function renderAdmin(questions, archived = []){
   const rows = await rpc("admin_votes", { p_code: CODE });
   const members = await rpc("admin_members", { p_code: CODE });
   const voters = members.filter(m => !m.is_debug);
@@ -244,11 +250,11 @@ async function renderAdmin(questions){
   panel.className = "ballot admin";
   panel.innerHTML = '<div class="admin-head">Panou organizator</div><div class="admin-body"></div>';
   const body = panel.querySelector(".admin-body");
-  if(!questions.length){
+  if(!questions.length && !archived.length){
     const p = document.createElement("p"); p.className = "total"; p.style.margin = "0 0 16px";
     p.textContent = "Nu ai creat nicio întrebare încă. Scrie prima mai jos."; body.appendChild(p);
   }
-  for(const q of questions){
+  const addCard = (q, parent) => {
     const votes = rows.filter(r => r.question_id === q.id);
     const card = document.createElement("div"); card.className = "qcard";
     const t = document.createElement("h3"); t.textContent = q.question_text; card.appendChild(t);
@@ -357,7 +363,16 @@ async function renderAdmin(questions){
       try{ await rpc("delete_question", { p_code: CODE, p_id: q.id }); start(); }catch(e){ alert(e.message); }
     };
     card.appendChild(del);
-    body.appendChild(card);
+    parent.appendChild(card);
+  };
+  questions.forEach(q => addCard(q, body));
+  if(archived.length){
+    const ar = document.createElement("details"); ar.className = "arch";
+    const sm = document.createElement("summary"); sm.textContent = "Arhivă votări încheiate (" + archived.length + ") · vizibilă doar pentru tine";
+    ar.appendChild(sm);
+    archived.forEach(q => addCard(q, ar));
+    const sp = document.createElement("div"); sp.style.height = "6px"; ar.appendChild(sp);
+    body.appendChild(ar);
   }
   const r = document.createElement("button"); r.className = "go"; r.textContent = "Actualizează"; r.onclick = start; body.appendChild(r);
   wrap.appendChild(panel);
@@ -587,8 +602,11 @@ async function start(){
   try{ questions = await rpc("list_questions", { p_code: CODE, p_role: DEBUG ? role : null }); }catch(e){ sub.textContent = e.message; return; }
   OUTCOME = {};
   try{ (await rpc("question_outcomes", { p_code: CODE })).forEach(x => OUTCOME[x.question_id] = x.outcome); }catch(e){}
+  // votările încheiate dispar pentru toți; doar președintele le vede în arhivă
+  const archived = questions.filter(isClosed);
+  questions = questions.filter(q => !isClosed(q));
   if(!questions.length){
-    const p = document.createElement("p"); p.className = "sub"; p.textContent = "Nu sunt întrebări încă. Revino mai târziu."; wrap.appendChild(p);
+    const p = document.createElement("p"); p.className = "sub"; p.textContent = "Nu sunt întrebări active. Revino mai târziu."; wrap.appendChild(p);
   }
   questions.forEach(q => {
     const box = document.createElement("section");
@@ -597,7 +615,7 @@ async function start(){
     (voted(q.id) || isClosed(q)) ? showResults(q, box) : renderVote(q, box);
   });
   try{
-    const h = await rpc("recruitment_history", { p_code: CODE });
+    const h = (await rpc("recruitment_history", { p_code: CODE })).filter(x => !rejected(x.outcome));
     if(h.length){
       const sec = document.createElement("section"); sec.className = "ballot"; sec.innerHTML = "<h2>Istoric recrutare</h2>";
       h.forEach(x => {
@@ -609,7 +627,7 @@ async function start(){
       wrap.appendChild(sec);
     }
   }catch(e){}
-  try{ if(ADMIN) await renderAdmin(questions); }catch(e){}
+  try{ if(ADMIN) await renderAdmin(questions, archived); }catch(e){}
 }
 start();
 </script>
