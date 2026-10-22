@@ -86,6 +86,20 @@ select option{background:var(--paper);color:var(--ink)}
 .endbtn{font:800 .9rem "Bricolage Grotesque",system-ui,sans-serif;background:none;color:var(--stamp);border:2px solid var(--stamp);border-radius:3px;padding:8px 16px;cursor:pointer}
 .endbtn:hover{background:var(--stamp);color:var(--paper)}
 .endbtn:disabled{opacity:.35;cursor:default}
+.laws{margin:0;padding-left:1.6em}
+.laws li{padding:10px 0;border-bottom:1px solid var(--line)}
+.laws li:last-child{border-bottom:0}
+.laws li::marker{font:800 1rem "Bricolage Grotesque",system-ui,sans-serif;color:var(--stamp)}
+.law-text{white-space:pre-wrap}
+.law-date{color:var(--mute);font-size:.85rem;margin-top:2px}
+.law-act .link{margin:4px 12px 0 0}
+.law-edit textarea,.law-edit input{font:inherit;width:100%;background:transparent;color:var(--ink);border:1.5px solid var(--line);border-radius:3px;padding:8px 10px;margin:0 0 8px}
+.law-edit input[type=date]{width:auto}
+.law-edit textarea:focus,.law-edit input:focus{outline:0;border-color:var(--stamp)}
+.dl{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:18px;color:var(--mute)}
+.dl button{font:600 .9rem "Bricolage Grotesque",system-ui,sans-serif;background:none;color:var(--ink);border:1.5px solid var(--ink);border-radius:3px;padding:6px 14px;cursor:pointer}
+.dl button:hover{background:var(--ink);color:var(--paper)}
+.dl button:disabled{opacity:.35;cursor:default}
 </style>
 </head>
 <body>
@@ -100,6 +114,7 @@ select option{background:var(--paper);color:var(--ink)}
 const SUPABASE_URL = "https://ahpibulygxdvdlzzvnpk.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFocGlidWx5Z3hkdmRsenp2bnBrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEwMTI0OTMsImV4cCI6MjEwNjU4ODQ5M30.Okt8xgW0gB4BK6XCWwo8t5FFBH_W9nk20ASxB3aVjOI";
 const TITLE = "Partidul Unirii Clasei Divizia Clasei A";
+const LAWS_TITLE = "Legile P.U.C.A.";
 const SUBTITLE = "Alege o variantă la fiecare întrebare, apoi apasă „Votează”.";
 
 document.getElementById("title").textContent = TITLE;
@@ -126,6 +141,7 @@ async function rpc(fn, args){
       m.includes("votul e inchis") ? "Votul s-a închis." :
       m.includes("cod admin") ? "Nu poți schimba codul unui administrator." :
       m.includes("numar variante") ? "Poți redenumi variantele, nu adăuga sau șterge." :
+      m.includes("lege invalida") ? "Scrie textul legii." :
       m.includes("nume invalid") ? "Scrie numele membrului." :
       m.includes("nu poti sterge") ? "Nu poți șterge un administrator." :
       "Eroare (" + r.status + "). Încearcă din nou.");
@@ -577,6 +593,147 @@ async function renderRolePicker(name){
   wrap.appendChild(box);
 }
 
+// ───────── Legi ─────────
+const fmtDay = d => new Date(String(d).length === 10 ? d + "T12:00:00" : d).toLocaleDateString("ro-RO", { day: "numeric", month: "long", year: "numeric" });
+const lawDate = l => "În vigoare din " + fmtDay(l.adopted_on) + (l.from_vote ? " · adoptată prin vot" : "") + (l.updated_at ? " · modificată pe " + fmtDay(l.updated_at) : "");
+const today = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
+
+function lawForm(text, date, onSave, onCancel){
+  const f = document.createElement("div"); f.className = "law-edit";
+  f.innerHTML = '<textarea rows="3" aria-label="Textul legii" placeholder="Textul legii"></textarea><label class="lbl" style="color:var(--mute)">În vigoare din</label><input type="date" aria-label="În vigoare din"><div><button class="go">Salvează</button></div><p class="msg" role="alert"></p>';
+  const ta = f.querySelector("textarea"), di = f.querySelector("input"), msg = f.querySelector(".msg"), go = f.querySelector(".go");
+  ta.value = text || ""; di.value = date || today();
+  if(onCancel){ const c = document.createElement("button"); c.className = "link"; c.textContent = "Renunță"; c.onclick = onCancel; go.after(c); }
+  go.onclick = async () => {
+    if(!ta.value.trim()){ msg.textContent = "Scrie textul legii."; return; }
+    go.disabled = true;
+    try{ await onSave(ta.value.trim(), di.value || null); start(); }catch(e){ msg.textContent = e.message; go.disabled = false; }
+  };
+  return f;
+}
+
+async function renderLaws(){
+  const laws = await rpc("list_laws", { p_code: CODE });
+  if(!laws.length && !ADMIN) return;
+  const sec = document.createElement("section"); sec.className = "ballot";
+  const h = document.createElement("h2"); h.textContent = LAWS_TITLE + " (" + laws.length + ")"; sec.appendChild(h);
+  if(!laws.length){ const p = document.createElement("p"); p.className = "total"; p.style.marginTop = "0"; p.textContent = "Nu e nicio lege încă. Legile adoptate prin vot apar aici automat."; sec.appendChild(p); }
+  const ol = document.createElement("ol"); ol.className = "laws";
+  laws.forEach(l => {
+    const li = document.createElement("li");
+    const show = () => {
+      li.innerHTML = "";
+      const t = document.createElement("div"); t.className = "law-text"; t.textContent = l.law_text;
+      const d = document.createElement("div"); d.className = "law-date"; d.textContent = lawDate(l);
+      li.append(t, d);
+      if(!ADMIN) return;
+      const act = document.createElement("div"); act.className = "law-act";
+      const eb = document.createElement("button"); eb.className = "link"; eb.textContent = "Modifică";
+      eb.onclick = () => { li.innerHTML = ""; li.appendChild(lawForm(l.law_text, l.adopted_on, (t, d) => rpc("edit_law", { p_code: CODE, p_id: l.id, p_text: t, p_date: d }), show)); };
+      const db = document.createElement("button"); db.className = "link"; db.textContent = "Scoate legea";
+      db.onclick = async () => {
+        if(!confirm("Scoți legea din listă?")) return;
+        try{ await rpc("delete_law", { p_code: CODE, p_id: l.id }); start(); }catch(e){ alert(e.message); }
+      };
+      act.append(eb, db); li.appendChild(act);
+    };
+    show(); ol.appendChild(li);
+  });
+  if(laws.length) sec.appendChild(ol);
+  if(laws.length){
+    const dl = document.createElement("div"); dl.className = "dl";
+    const s = document.createElement("span"); s.textContent = "Descarcă pentru printat:"; dl.appendChild(s);
+    [["PNG", exportPNG], ["Word", exportWord], ["PDF", exportPDF]].forEach(([n, fn]) => {
+      const b = document.createElement("button"); b.textContent = n;
+      b.onclick = async () => { b.disabled = true; try{ await fn(laws); }catch(e){ alert("Nu s-a putut descărca. Încearcă din nou."); } b.disabled = false; };
+      dl.appendChild(b);
+    });
+    sec.appendChild(dl);
+  }
+  if(ADMIN){
+    const ab = document.createElement("button"); ab.className = "link"; ab.style.margin = "18px 0 0"; ab.textContent = "+ Adaugă lege";
+    ab.onclick = () => ab.replaceWith(lawForm("", today(), (t, d) => rpc("add_law", { p_code: CODE, p_text: t, p_date: d }), () => start()));
+    sec.appendChild(ab);
+  }
+  wrap.appendChild(sec);
+}
+
+// Pagini A4 (150 dpi) desenate pe canvas: le folosesc PNG-ul și PDF-ul.
+async function lawPages(laws){
+  const F = { title: '800 60px "Bricolage Grotesque", sans-serif', num: '800 34px "Bricolage Grotesque", sans-serif', text: '400 34px "Source Serif 4", Georgia, serif', small: '400 24px "Source Serif 4", Georgia, serif' };
+  try{ await Promise.all(Object.values(F).map(f => document.fonts.load(f, "ăîșțâ"))); }catch(e){}
+  const W = 1240, H = 1754, M = 120, IND = 70, LH = 48;
+  const ink = "#14202b", mute = "#5c6b78", stamp = "#b3202a";
+  const logo = document.querySelector(".logo");
+  const pages = []; let x, y;
+  const page = () => {
+    const c = document.createElement("canvas"); c.width = W; c.height = H; pages.push(c);
+    x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, W, H); y = M;
+  };
+  const lines = (text, maxW) => {
+    x.font = F.text; const out = [];
+    String(text).split("\n").forEach(par => {
+      let line = "";
+      par.split(/\s+/).forEach(w => { const t = line ? line + " " + w : w; if(line && x.measureText(t).width > maxW){ out.push(line); line = w; } else line = t; });
+      out.push(line);
+    });
+    return out;
+  };
+  page();
+  if(logo && logo.complete && logo.naturalWidth){
+    x.save(); x.beginPath(); x.arc(W / 2, y + 100, 100, 0, Math.PI * 2); x.clip();
+    x.drawImage(logo, (W - 200) / 2, y, 200, 200); x.restore(); y += 240;
+  }
+  x.textAlign = "center";
+  x.fillStyle = ink; x.font = F.title; x.fillText(LAWS_TITLE, W / 2, y + 50); y += 92;
+  x.fillStyle = mute; x.font = F.small; x.fillText(TITLE, W / 2, y + 14); y += 48;
+  x.strokeStyle = ink; x.lineWidth = 3; x.beginPath(); x.moveTo(M, y); x.lineTo(W - M, y); x.stroke(); y += 60;
+  x.textAlign = "left";
+  laws.forEach((l, i) => {
+    const ls = lines(l.law_text, W - 2 * M - IND);
+    if(y + ls.length * LH + 60 > H - M) page();
+    x.fillStyle = stamp; x.font = F.num; x.fillText((i + 1) + ".", M, y + 34);
+    x.fillStyle = ink; x.font = F.text; ls.forEach((ln, k) => x.fillText(ln, M + IND, y + 34 + k * LH));
+    y += ls.length * LH;
+    x.fillStyle = mute; x.font = F.small; x.fillText(lawDate(l), M + IND, y + 22);
+    y += 76;
+  });
+  pages.forEach((c, i) => {
+    const g = c.getContext("2d"); g.textAlign = "center"; g.fillStyle = mute; g.font = F.small;
+    g.fillText(LAWS_TITLE + " · pagina " + (i + 1) + " din " + pages.length + " · tipărit pe " + fmtDay(today()), W / 2, H - 60);
+  });
+  return pages;
+}
+
+const fileBase = () => LAWS_TITLE.replace(/\./g, "").replace(/\s+/g, "-");
+function save(blob, name){
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+async function exportPNG(laws){
+  const ps = await lawPages(laws);
+  for(let i = 0; i < ps.length; i++){
+    const b = await new Promise(r => ps[i].toBlob(r, "image/png"));
+    save(b, fileBase() + (ps.length > 1 ? "-" + (i + 1) : "") + ".png");
+  }
+}
+function loadScript(src){
+  return new Promise((ok, fail) => { const s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = fail; document.head.appendChild(s); });
+}
+async function exportPDF(laws){
+  if(!window.jspdf) await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js");
+  const ps = await lawPages(laws);
+  const doc = new window.jspdf.jsPDF({ unit: "mm", format: "a4" });
+  ps.forEach((c, i) => { if(i) doc.addPage(); doc.addImage(c.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, 210, 297); });
+  save(doc.output("blob"), fileBase() + ".pdf");
+}
+function exportWord(laws){
+  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>${esc(LAWS_TITLE)}</title>
+<style>@page{size:21cm 29.7cm;margin:2.2cm}body{font-family:Georgia,serif;font-size:13pt;color:#14202b}h1{text-align:center;font-family:Arial,sans-serif;font-size:24pt;margin:0}.s{text-align:center;color:#5c6b78;margin:4pt 0 18pt}li{margin:0 0 12pt}.d{color:#5c6b78;font-size:10pt}</style></head>
+<body><h1>${esc(LAWS_TITLE)}</h1><p class="s">${esc(TITLE)}</p><ol>${laws.map(l => `<li>${esc(l.law_text).replace(/\n/g, "<br>")}<br><span class="d">${esc(lawDate(l))}</span></li>`).join("")}</ol></body></html>`;
+  save(new Blob(["﻿", html], { type: "application/msword" }), fileBase() + ".doc");
+}
+
 async function start(){
   wrap.innerHTML = "";
   if(!CODE){ renderLogin(); return; }
@@ -643,6 +800,7 @@ async function start(){
       wrap.appendChild(sec);
     }
   }catch(e){}
+  try{ await renderLaws(); }catch(e){}
   try{ if(ADMIN) await renderAdmin(questions, archived); }catch(e){}
 }
 start();
