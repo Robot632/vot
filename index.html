@@ -100,6 +100,7 @@ select option{background:var(--paper);color:var(--ink)}
 .dl button{font:600 .9rem "Bricolage Grotesque",system-ui,sans-serif;background:none;color:var(--ink);border:1.5px solid var(--ink);border-radius:3px;padding:6px 14px;cursor:pointer}
 .dl button:hover{background:var(--ink);color:var(--paper)}
 .dl button:disabled{opacity:.35;cursor:default}
+.ver{color:var(--mute);font-size:.8rem;text-align:center;margin:36px 0 0}
 </style>
 </head>
 <body>
@@ -108,6 +109,7 @@ select option{background:var(--paper);color:var(--ink)}
   <h1 id="title"></h1>
   <p class="sub" id="sub"></p>
   <div id="ballots"></div>
+  <p class="ver" id="ver"></p>
 </main>
 
 <script>
@@ -812,7 +814,23 @@ async function start(){
   try{ await renderLaws(); }catch(e){}
   try{ if(ADMIN) await renderAdmin(questions, archived); }catch(e){}
 }
+// Versiunea = câte pull request-uri au fost unite în main (de pe GitHub).
+const REPO = "Robot632/vot";
+async function showVersion(){
+  let v = null;
+  try{ const c = JSON.parse(localStorage.getItem("site_ver") || "null"); if(c && Date.now() - c.t < 600000) v = c; }catch(e){}
+  if(!v){
+    try{
+      const r = await fetch("https://api.github.com/repos/" + REPO + "/pulls?state=closed&base=main&per_page=100");
+      const merged = (await r.json()).filter(p => p.merged_at).map(p => p.merged_at).sort();
+      v = { n: merged.length, d: merged.pop(), t: Date.now() };
+      try{ localStorage.setItem("site_ver", JSON.stringify(v)); }catch(e){}
+    }catch(e){}
+  }
+  if(v && v.n) document.getElementById("ver").textContent = "Versiunea " + v.n + (v.d ? " · actualizată pe " + fmtDay(v.d) : "");
+}
 start();
+showVersion();
 </script>
 </body>
 </html>
