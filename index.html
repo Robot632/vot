@@ -620,7 +620,7 @@ async function renderLaws(){
     const sec = document.createElement("section"); sec.className = "ballot";
     sec.innerHTML = "<h2></h2><p class=\"total\" style=\"margin-top:0\"></p>";
     sec.querySelector("h2").textContent = LAWS_TITLE;
-    sec.querySelector("p").textContent = ADMIN ? "Legile nu s-au putut încărca. Rulează legi.sql în Supabase (SQL Editor), apoi reîncarcă pagina." : "Legile nu s-au putut încărca. Încearcă mai târziu.";
+    sec.querySelector("p").textContent = ADMIN ? "Legile nu s-au putut încărca (" + e.message + "). Rulează legi.sql în Supabase (SQL Editor), apoi reîncarcă pagina." : "Legile nu s-au putut încărca. Încearcă mai târziu.";
     wrap.appendChild(sec); return;
   }
   if(!laws.length && !ADMIN) return;
