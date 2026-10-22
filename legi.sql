@@ -23,7 +23,7 @@ create function list_laws(p_code text)
 returns table(id bigint, law_text text, adopted_on date, updated_at timestamptz, from_vote boolean)
 language plpgsql security definer set search_path = public as $$
 begin
-  perform _member(p_code);
+  if member_name(p_code) is null then raise exception 'cod invalid'; end if;
   -- legile adoptate prin vot intră singure în listă; dacă ceva nu merge aici,
   -- lista se arată oricum
   begin
@@ -47,7 +47,7 @@ create or replace function add_law(p_code text, p_text text, p_date date) return
 language plpgsql security definer set search_path = public as $$
 declare new_id bigint;
 begin
-  perform _admin(p_code);
+  if not coalesce(is_admin(p_code), false) then raise exception 'cod invalid'; end if;
   if coalesce(trim(p_text), '') = '' then raise exception 'lege invalida'; end if;
   insert into laws(law_text, adopted_on) values (trim(p_text), coalesce(p_date, current_date))
   returning id into new_id;
@@ -57,7 +57,7 @@ end $$;
 create or replace function edit_law(p_code text, p_id bigint, p_text text, p_date date) returns void
 language plpgsql security definer set search_path = public as $$
 begin
-  perform _admin(p_code);
+  if not coalesce(is_admin(p_code), false) then raise exception 'cod invalid'; end if;
   if coalesce(trim(p_text), '') = '' then raise exception 'lege invalida'; end if;
   update laws set law_text = trim(p_text), adopted_on = coalesce(p_date, adopted_on), updated_at = now()
   where id = p_id and not removed;
@@ -66,7 +66,7 @@ end $$;
 create or replace function delete_law(p_code text, p_id bigint) returns void
 language plpgsql security definer set search_path = public as $$
 begin
-  perform _admin(p_code);
+  if not coalesce(is_admin(p_code), false) then raise exception 'cod invalid'; end if;
   -- rămâne în tabel ca să nu fie readusă automat din vot
   update laws set removed = true, updated_at = now() where id = p_id;
 end $$;
