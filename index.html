@@ -100,6 +100,7 @@ select option{background:var(--paper);color:var(--ink)}
 .dl button{font:600 .9rem "Bricolage Grotesque",system-ui,sans-serif;background:none;color:var(--ink);border:1.5px solid var(--ink);border-radius:3px;padding:6px 14px;cursor:pointer}
 .dl button:hover{background:var(--ink);color:var(--paper)}
 .dl button:disabled{opacity:.35;cursor:default}
+.ver{color:var(--mute);font-size:.8rem;text-align:center;margin:36px 0 0}
 </style>
 </head>
 <body>
@@ -108,6 +109,7 @@ select option{background:var(--paper);color:var(--ink)}
   <h1 id="title"></h1>
   <p class="sub" id="sub"></p>
   <div id="ballots"></div>
+  <p class="ver" id="ver"></p>
 </main>
 
 <script>
@@ -115,6 +117,13 @@ const SUPABASE_URL = "https://ahpibulygxdvdlzzvnpk.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFocGlidWx5Z3hkdmRsenp2bnBrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEwMTI0OTMsImV4cCI6MjEwNjU4ODQ5M30.Okt8xgW0gB4BK6XCWwo8t5FFBH_W9nk20ASxB3aVjOI";
 const TITLE = "Partidul Unirii Clasei Divizia Clasei A";
 const LAWS_TITLE = "Legile P.U.C.A.";
+// Legile scrise direct în pagină: se arată dacă baza de date nu răspunde.
+const BUILTIN_LAWS = [
+  { id: -1, law_text: "Nu stropii membrii (Chiri).", adopted_on: "2026-09-25", updated_at: null, from_vote: false },
+  { id: -2, law_text: "Nu vapa din marker (Chiri).", adopted_on: "2026-09-25", updated_at: null, from_vote: false },
+  { id: -3, law_text: "3 abateri → cetățean.", adopted_on: "2026-09-25", updated_at: null, from_vote: false },
+  { id: -4, law_text: "Nu ne batem pe poziții.", adopted_on: "2026-09-25", updated_at: null, from_vote: false }
+];
 const SUBTITLE = "Alege o variantă la fiecare întrebare, apoi apasă „Votează”.";
 
 document.getElementById("title").textContent = TITLE;
@@ -613,14 +622,15 @@ function lawForm(text, date, onSave, onCancel){
 }
 
 async function renderLaws(){
-  let laws;
+  let laws, offline = null;
   try{ laws = await rpc("list_laws", { p_code: CODE }); }
-  catch(e){
-    // de obicei: legi.sql nu a fost rulat încă în Supabase
+  catch(e){ laws = BUILTIN_LAWS; offline = e.message; }
+  if(offline && !laws.length){
+    if(!ADMIN) return;
     const sec = document.createElement("section"); sec.className = "ballot";
     sec.innerHTML = "<h2></h2><p class=\"total\" style=\"margin-top:0\"></p>";
     sec.querySelector("h2").textContent = LAWS_TITLE;
-    sec.querySelector("p").textContent = ADMIN ? "Legile nu s-au putut încărca (" + e.message + "). Rulează legi.sql în Supabase (SQL Editor), apoi reîncarcă pagina." : "Legile nu s-au putut încărca. Încearcă mai târziu.";
+    sec.querySelector("p").textContent = "Legile nu s-au putut încărca (" + offline + "). Rulează legi.sql în Supabase (SQL Editor), apoi reîncarcă pagina.";
     wrap.appendChild(sec); return;
   }
   if(!laws.length && !ADMIN) return;
@@ -635,7 +645,7 @@ async function renderLaws(){
       const t = document.createElement("div"); t.className = "law-text"; t.textContent = l.law_text;
       const d = document.createElement("div"); d.className = "law-date"; d.textContent = lawDate(l);
       li.append(t, d);
-      if(!ADMIN) return;
+      if(!ADMIN || offline) return;
       const act = document.createElement("div"); act.className = "law-act";
       const eb = document.createElement("button"); eb.className = "link"; eb.textContent = "Modifică";
       eb.onclick = () => { li.innerHTML = ""; li.appendChild(lawForm(l.law_text, l.adopted_on, (t, d) => rpc("edit_law", { p_code: CODE, p_id: l.id, p_text: t, p_date: d }), show)); };
@@ -659,7 +669,12 @@ async function renderLaws(){
     });
     sec.appendChild(dl);
   }
-  if(ADMIN){
+  if(ADMIN && offline){
+    const n = document.createElement("p"); n.className = "total";
+    n.textContent = "Legile sunt afișate din pagină, fiindcă baza de date nu le-a dat (" + offline + "). Ca să le poți modifica de aici, rulează legi.sql în Supabase.";
+    sec.appendChild(n);
+  }
+  if(ADMIN && !offline){
     const ab = document.createElement("button"); ab.className = "link"; ab.style.margin = "18px 0 0"; ab.textContent = "+ Adaugă lege";
     ab.onclick = () => ab.replaceWith(lawForm("", today(), (t, d) => rpc("add_law", { p_code: CODE, p_text: t, p_date: d }), () => start()));
     sec.appendChild(ab);
@@ -812,7 +827,23 @@ async function start(){
   try{ await renderLaws(); }catch(e){}
   try{ if(ADMIN) await renderAdmin(questions, archived); }catch(e){}
 }
+// Versiunea = câte pull request-uri au fost unite în main (de pe GitHub).
+const REPO = "Robot632/vot";
+async function showVersion(){
+  let v = null;
+  try{ const c = JSON.parse(localStorage.getItem("site_ver") || "null"); if(c && Date.now() - c.t < 600000) v = c; }catch(e){}
+  if(!v){
+    try{
+      const r = await fetch("https://api.github.com/repos/" + REPO + "/pulls?state=closed&base=main&per_page=100");
+      const merged = (await r.json()).filter(p => p.merged_at).map(p => p.merged_at).sort();
+      v = { n: merged.length, d: merged.pop(), t: Date.now() };
+      try{ localStorage.setItem("site_ver", JSON.stringify(v)); }catch(e){}
+    }catch(e){}
+  }
+  if(v && v.n) document.getElementById("ver").textContent = "Versiunea " + v.n + (v.d ? " · actualizată pe " + fmtDay(v.d) : "");
+}
 start();
+showVersion();
 </script>
 </body>
 </html>
