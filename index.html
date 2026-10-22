@@ -613,7 +613,16 @@ function lawForm(text, date, onSave, onCancel){
 }
 
 async function renderLaws(){
-  const laws = await rpc("list_laws", { p_code: CODE });
+  let laws;
+  try{ laws = await rpc("list_laws", { p_code: CODE }); }
+  catch(e){
+    // de obicei: legi.sql nu a fost rulat încă în Supabase
+    const sec = document.createElement("section"); sec.className = "ballot";
+    sec.innerHTML = "<h2></h2><p class=\"total\" style=\"margin-top:0\"></p>";
+    sec.querySelector("h2").textContent = LAWS_TITLE;
+    sec.querySelector("p").textContent = ADMIN ? "Legile nu s-au putut încărca. Rulează legi.sql în Supabase (SQL Editor), apoi reîncarcă pagina." : "Legile nu s-au putut încărca. Încearcă mai târziu.";
+    wrap.appendChild(sec); return;
+  }
   if(!laws.length && !ADMIN) return;
   const sec = document.createElement("section"); sec.className = "ballot";
   const h = document.createElement("h2"); h.textContent = LAWS_TITLE + " (" + laws.length + ")"; sec.appendChild(h);
