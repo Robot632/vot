@@ -71,7 +71,7 @@ select t, date '2026-09-25'
   from unnest(array[
     'Nu stropii membrii (Chiri).',
     'Nu vapa din marker (Chiri).',
-    'Abateri → cetățean.',
+    '3 abateri → cetățean.',
     'Nu ne batem pe poziții.'
   ]) with ordinality as x(t, n)
  where not exists (select 1 from laws)
